@@ -115,10 +115,11 @@ try {
             ]
         ],
         "generationConfig" => [
-            "temperature" => 0.7, // Some creativity, but mostly predictable
+            "temperature" => 0.7,
             "topK" => 40,
             "topP" => 0.95,
             "maxOutputTokens" => 1024,
+            "responseMimeType" => "application/json"
         ]
     ];
 
@@ -129,6 +130,7 @@ try {
         'Content-Type: application/json'
     ]);
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
 
     $response = curl_exec($ch);
 
@@ -140,7 +142,9 @@ try {
     curl_close($ch);
 
     if ($httpCode >= 400) {
-        throw new Exception("Error de procesamiento en la IA (Status $httpCode).", 500);
+        $errBody = json_decode($response, true);
+        $errMsg = isset($errBody['error']['message']) ? $errBody['error']['message'] : "Status $httpCode";
+        throw new Exception("Error de la IA: $errMsg", 500);
     }
 
     // 7. Parse AI Response
@@ -153,14 +157,19 @@ try {
     $aiText = $geminiData['candidates'][0]['content']['parts'][0]['text'];
 
     // Clean potential markdown blocks like ```json ... ```
-    $aiText = preg_replace('/```json/i', '', $aiText);
-    $aiText = preg_replace('/```/', '', $aiText);
+    $aiText = preg_replace('/^```(?:json)?\s*/i', '', $aiText);
+    $aiText = preg_replace('/\s*```\s*$/', '', $aiText);
     $aiText = trim($aiText);
+
+    // Try to extract JSON object if surrounded by other text
+    if (preg_match('/\{[\s\S]*\}/', $aiText, $jsonMatch)) {
+        $aiText = $jsonMatch[0];
+    }
 
     $parsedQuestion = json_decode($aiText, true);
 
     if (json_last_error() !== JSON_ERROR_NONE || !isset($parsedQuestion['question'])) {
-        throw new Exception("La IA no devolvió un formato JSON válido.", 500);
+        throw new Exception("La IA no devolvió un formato JSON válido. Raw: " . substr($aiText, 0, 200), 500);
     }
 
     // Normalize output
@@ -170,8 +179,7 @@ try {
     Responder::success([
         'question' => $parsedQuestion['question'],
         'options' => $options,
-        'correctAnswer' => $correctAnswer,
-        'raw_text' => $aiText // useful for debugging
+        'correctAnswer' => $correctAnswer
     ], "Pregunta generada con éxito");
 
 }
