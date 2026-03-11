@@ -16,12 +16,12 @@ function loadEnv(string $path): void
     foreach ($lines as $line) {
         // Ignorar comentarios
         $line = trim($line);
-        if (str_starts_with($line, '#') || $line === '') {
+        if (substr($line, 0, 1) === '#' || $line === '') {
             continue;
         }
 
         // Parsear KEY=VALUE
-        if (!str_contains($line, '=')) {
+        if (strpos($line, '=') === false) {
             continue;
         }
 
@@ -31,8 +31,8 @@ function loadEnv(string $path): void
 
         // Quitar comillas opcionales del valor: "valor" o 'valor'
         if (
-        (str_starts_with($value, '"') && str_ends_with($value, '"')) ||
-        (str_starts_with($value, "'") && str_ends_with($value, "'"))
+        (substr($value, 0, 1) === '"' && substr($value, -1) === '"') ||
+        (substr($value, 0, 1) === "'" && substr($value, -1) === "'")
         ) {
             $value = substr($value, 1, -1);
         }
