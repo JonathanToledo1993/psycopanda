@@ -19,7 +19,11 @@ try {
     $token = $matches[1];
     $decoded = JWT::decode($token);
 
-    if (!$decoded || ($decoded['role'] ?? '') !== 'admin') {
+    if (!$decoded || (
+        strtolower($decoded['type'] ?? '') !== 'admin' && 
+        strtolower($decoded['role'] ?? '') !== 'admin' &&
+        strtolower($decoded['role'] ?? '') !== 'superadmin'
+    )) {
         throw new Exception("No autorizado para generar preguntas.", 403);
     }
 
@@ -51,7 +55,7 @@ try {
     // 4. Fetch Existing Questions (Context for Deduplication)
     $existingContext = "";
     if ($testId) {
-        $stmt = $pdo->prepare("SELECT IFNULL(questionText, question) AS q FROM catalog_questions WHERE testId = :testId OR testKey = :testId");
+        $stmt = $pdo->prepare("SELECT IFNULL(questionText, '') AS q FROM catalog_questions WHERE testId = :testId");
         $stmt->bindParam(':testId', $testId);
         $stmt->execute();
         $existingQuestions = $stmt->fetchAll(PDO::FETCH_ASSOC);
