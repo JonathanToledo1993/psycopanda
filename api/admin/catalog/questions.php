@@ -11,15 +11,23 @@ $method = $_SERVER['REQUEST_METHOD'];
 
 if ($method === 'GET') {
     // Obtener preguntas de una prueba global
-    if (!isset($_GET['testKey'])) {
-        Responder::error("Se requiere el testKey.", 400);
+    $testKey = $_GET['testKey'] ?? null;
+    $testId = $_GET['testId'] ?? null;
+    
+    if (!$testKey && !$testId) {
+        Responder::error("Se requiere el testKey o testId.", 400);
     }
     
-    $testKey = $_GET['testKey'];
-    
     try {
-        $stmt = $pdo->prepare("SELECT id, testId as testKey, type, questionText as question, options, correctAnswer, points, isActive FROM catalog_questions WHERE testId = ? ORDER BY createdAt ASC");
-        $stmt->execute([$testKey]);
+        // Buscar por ambos valores para cubrir el mismatch key vs id
+        if ($testKey && $testId && $testKey !== $testId) {
+            $stmt = $pdo->prepare("SELECT id, testId as testKey, type, questionText as question, options, correctAnswer, points, isActive FROM catalog_questions WHERE testId = ? OR testId = ? ORDER BY createdAt ASC");
+            $stmt->execute([$testKey, $testId]);
+        } else {
+            $searchVal = $testKey ?: $testId;
+            $stmt = $pdo->prepare("SELECT id, testId as testKey, type, questionText as question, options, correctAnswer, points, isActive FROM catalog_questions WHERE testId = ? ORDER BY createdAt ASC");
+            $stmt->execute([$searchVal]);
+        }
         $questions = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
         // Decodificar JSON de opciones
@@ -36,11 +44,12 @@ if ($method === 'GET') {
     // Agregar nueva pregunta a la prueba
     $input = json_decode(file_get_contents('php://input'), true);
     
-    if (!isset($input['testKey'], $input['question'])) {
-        Responder::error("Faltan datos obligatorios (testKey, question).", 400);
+    // Accept both testKey and testId from frontend
+    $testKey = $input['testKey'] ?? $input['testId'] ?? null;
+    if (!$testKey || !isset($input['question'])) {
+        Responder::error("Faltan datos obligatorios (testKey/testId, question).", 400);
     }
 
-    $testKey = $input['testKey'];
     $type = $input['type'] ?? 'MULTIPLE_CHOICE';
     $questionTxt = trim($input['question']);
     $optionsArr = $input['options'] ?? [];
@@ -59,7 +68,6 @@ if ($method === 'GET') {
         $stmt = $pdo->prepare($sql);
         $stmt->execute([$id, $testKey, $type, $questionTxt, $optsJson, $correctAnswer, $points]);
 
-        // Retornar la pregunta creada
         $newQuestion = [
             "id" => $id,
             "testKey" => $testKey,
@@ -75,6 +83,32 @@ if ($method === 'GET') {
 
     } catch (Exception $e) {
         Responder::error("Error creando pregunta: " . $e->getMessage(), 500);
+    }
+
+} elseif ($method === 'PUT') {
+    // Editar pregunta existente
+    $input = json_decode(file_get_contents('php://input'), true);
+    
+    if (!isset($input['id'])) {
+        Responder::error("ID de pregunta requerido para editar.", 400);
+    }
+
+    $id = $input['id'];
+    $type = $input['type'] ?? 'MULTIPLE_CHOICE';
+    $questionTxt = trim($input['question'] ?? '');
+    $optionsArr = $input['options'] ?? [];
+    $correctAnswer = $input['correctAnswer'] ?? '';
+    $points = (float)($input['points'] ?? 1);
+
+    try {
+        $optsJson = json_encode($optionsArr);
+        $sql = "UPDATE catalog_questions SET type = ?, questionText = ?, options = ?, correctAnswer = ?, points = ? WHERE id = ?";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([$type, $questionTxt, $optsJson, $correctAnswer, $points, $id]);
+
+        Responder::success(["message" => "Pregunta actualizada."]);
+    } catch (Exception $e) {
+        Responder::error("Error actualizando pregunta: " . $e->getMessage(), 500);
     }
 
 } elseif ($method === 'DELETE') {
